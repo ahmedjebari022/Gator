@@ -157,16 +157,59 @@ func handlerUsers(s *state,cmd command)error{
 }
 
 func handlerAgg(s *state,cmd command)error{
-	rssfeed, err := FetchFeed(context.Background(),"https://www.wagslane.dev/index.xml")
-	if err != nil{
+	if len(cmd.arguments) < 1{
+		os.Exit(1)
+	}
+	fmt.Printf("Collecting feeds every %s\n",cmd.arguments[0])
+	timeDuration, err := time.ParseDuration(cmd.arguments[0])
+	if err != nil {
 		return err
 	}
-	fmt.Printf("%s\n%s\n",rssfeed.Channel.Title,rssfeed.Channel.Description)
-	for _,v := range rssfeed.Channel.Item{
-		fmt.Printf("%s\n%s\n",v.Title,v.Description)
+	ticker := time.NewTicker(timeDuration)
+	defer ticker.Stop()
+	for ; ; <- ticker.C{
+		err := scrapFeeds(s)
+		if err != nil{
+			log.Fatal("probleme with feed")
+		}
 	}
-	return nil
+
 }
+
+func scrapFeeds(s *state)error{
+	nextFeed, err := s.db.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		return err
+	}
+	err = s.db.MarkFeedFetched(context.Background(),nextFeed.ID)
+	if err != nil {
+		return err
+	}
+	rssfeed, err := FetchFeed(context.Background(),nextFeed.Url)
+	if err != nil {
+		return err
+	}
+	
+	p, err:= s.db.CreatePost(context.Background(),database.CreatePostParams{
+		ID: uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Title: rssfeed.Channel.Title,
+		Url: rssfeed.Channel.Description,
+		
+		FeedID: nextFeed.ID,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	
+	return nil
+
+
+}
+
+
+
 
 func handlerAddFeed(s *state,cmd command,user database.User)error{
 	if len(cmd.arguments) < 2{
@@ -281,3 +324,4 @@ func handlerUnfollow(s* state,cmd command,user database.User)error{
 	return nil
 
 }
+
