@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	
+	"strconv"
+
 	"strings"
 	"time"
 
@@ -45,6 +46,7 @@ func main(){
 	cmds.register("follow",middlewareLoggedIn(handlerFollow))
 	cmds.register("following",middlewareLoggedIn(handlerFollowing))
 	cmds.register("unfollow",middlewareLoggedIn(handlerUnfollow))
+	cmds.register("brows",middlewareLoggedIn(handlerBrows))
 	args := os.Args
 	if len(args) < 2 {
 		log.Fatal("Expecting two arguments")
@@ -190,22 +192,31 @@ func scrapFeeds(s *state)error{
 		return err
 	}
 	
-	p, err:= s.db.CreatePost(context.Background(),database.CreatePostParams{
-		ID: uuid.New(),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		Title: rssfeed.Channel.Title,
-		Url: rssfeed.Channel.Description,
-		
-		FeedID: nextFeed.ID,
-	})
-	if err != nil {
-		log.Fatal(err)
+	for _, item := range rssfeed.Channel.Item{
+		    pubDate, err := time.Parse(time.RFC1123, item.PubDate)
+			if err != nil {
+				log.Fatal(err)
+				continue
+			} 
+			p, err := s.db.CreatePost(context.Background(),database.CreatePostParams{
+				ID:          uuid.New(),
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
+				Title:       item.Title,
+				Url:         item.Link,
+				Description: item.Description,
+				PublishedAt: pubDate,
+				FeedID:      nextFeed.ID,
+			})
+			if err != nil {
+				if strings.Contains(err.Error(),"duplicate key value"){
+					fmt.Printf("Skipped duplicate post: %s\n",p.Url)
+                	continue
+				}
+			 	return fmt.Errorf("failed to create post: %w", err)
+			}
 	}
-	
 	return nil
-
-
 }
 
 
@@ -305,7 +316,7 @@ func handlerFollowing(s *state,cmd command,user database.User)error{
 		return nil
 }
 
-func handlerUnfollow(s* state,cmd command,user database.User)error{
+func handlerUnfollow(s *state,cmd command,user database.User)error{
 	if len(cmd.arguments) < 1 {
 		os.Exit(1)
 	}
@@ -325,3 +336,26 @@ func handlerUnfollow(s* state,cmd command,user database.User)error{
 
 }
 
+func handlerBrows(s *state, cmd command, user database.User)error{
+	limit := 2
+	if len(cmd.arguments) == 1{
+		parsed, err :=  strconv.Atoi(cmd.arguments[0])
+		if err != nil {
+			return err
+		}
+		limit = parsed
+	}
+	posts, err := s.db.GetPostsForUser(context.Background(),database.GetPostsForUserParams{
+		Limit: int32(limit),
+		UserID: user.ID,
+	})
+	if err != nil{
+		return err
+	}
+	for _,p := range posts{
+		fmt.Printf("Tile: %s\nUrl: %s\nDescription: %s\n",p.Title,p.Url,p.Description)
+	}
+	return  nil
+
+
+}
