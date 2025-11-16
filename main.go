@@ -172,10 +172,9 @@ func handlerAgg(s *state,cmd command)error{
 	for ; ; <- ticker.C{
 		err := scrapFeeds(s)
 		if err != nil{
-			log.Fatal("probleme with feed")
+			log.Fatal(err)
 		}
 	}
-
 }
 
 func scrapFeeds(s *state)error{
@@ -198,6 +197,7 @@ func scrapFeeds(s *state)error{
 				log.Fatal(err)
 				continue
 			} 
+			fmt.Printf("%s\n%s\n%s\n",item.Title,item.Link,item.Description)
 			p, err := s.db.CreatePost(context.Background(),database.CreatePostParams{
 				ID:          uuid.New(),
 				CreatedAt:   time.Now(),
